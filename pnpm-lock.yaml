@@ -24,6 +24,12 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  apps/http-server:
+    dependencies:
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+
   apps/web:
     dependencies:
       '@workspace/ui':
@@ -63,6 +69,12 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.7.3
+
+  apps/ws-server:
+    dependencies:
+      '@workspace/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
 
   packages/eslint-config:
     devDependencies:

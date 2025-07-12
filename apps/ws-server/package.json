@@ -1,0 +1,17 @@
+{
+  "name": "ws-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@workspace/typescript-config": "workspace:*"
+  },
+  "keywords": [],
+  "author": "Muhammad Abuzer Zia",
+  "authorGithub": "abuzerexe",
+  "license": "ISC",
+  "packageManager": "pnpm@10.4.1"
+}
