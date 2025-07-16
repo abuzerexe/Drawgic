@@ -1,9 +1,15 @@
 import { Server } from "socket.io";
 
-const io = new Server(3000, { /* options */ });
+const io = new Server(3002, { /* options */ });
 
 io.on("connection", (socket) => {
-  console.log("rooms: "+ socket.rooms)
-//   socket.join("room1")
-  socket.send("connection established successfully")
+  const url = socket.request.url
+
+  if(!url){
+    return
+  }
+
+  const queryParams = new URLSearchParams(url.split('?')[1])
+
+  // const 
 });
