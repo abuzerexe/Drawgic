@@ -14,7 +14,7 @@ export async function POST(req: NextRequest){
             }, { status: 401 })
         }
         
-        const {roomName} = await req.json()
+        const {roomName,adminId} = await req.json()
         const check = CreateRoomSchema.safeParse(roomName)
 
         if(!check.success){
@@ -22,27 +22,28 @@ export async function POST(req: NextRequest){
                 error: check.error.message
             }, { status: 422 })
         }
-
+        console.log(adminId)
         const success = await prisma.room.create({
             data:{
                 slug : roomName,
-                adminId: user.id
+                adminId : user.id
             }
         })
 
         if(!success){
             return NextResponse.json({
-                error: "Error"
+                error: "Error creating Room."
             }, { status: 500 })
         }
 
         return NextResponse.json({
-            msg: "Room created Successfully."
+            msg: "Room created Successfully.",
+            roomId : success.id
         })
         
     }catch(e:any){
         return NextResponse.json({
-            error: "Error."
+            error: "Internal Server Error."
         }, { status: 500 })
     }
 }
