@@ -9,11 +9,11 @@ export async function GET(req:NextRequest,{ params }: { params: { roomId: string
     try {
         const user = await currentUser();
 
-        // if (!user) {
-        //     return NextResponse.json({
-        //         error: "Unauthorized"
-        //     }, { status: 401 });
-        // }
+        if (!user) {
+            return NextResponse.json({
+                error: "Unauthorized"
+            }, { status: 401 });
+        }
         
         if (!params.roomId) {
             return NextResponse.json({
