@@ -10,7 +10,7 @@ datasource db {
 }
 
 model User{
-  id          String    @id @default(uuid())
+  id          String    @id
   fristName   String
   lastName    String? 
   email       String    @unique

@@ -5,10 +5,11 @@ import {
   SignedIn,
   SignedOut,
   UserButton,
+  useAuth,
 } from '@clerk/nextjs'
 
 export default function Page() {
-  return (
+  return ( 
           <header className="flex justify-end items-center p-4 gap-4 h-16">
             <SignedOut>
               <SignInButton />
@@ -19,7 +20,8 @@ export default function Page() {
               </SignUpButton>
             </SignedOut>
             <SignedIn>
-              <UserButton />
+              <UserButton  />
             </SignedIn>
-          </header>  )
+          </header> 
+           )
 }
