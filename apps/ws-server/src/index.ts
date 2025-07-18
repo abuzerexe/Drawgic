@@ -1,11 +1,37 @@
 import { Server } from "socket.io";
+import { createClient } from "redis";
+import { createShardedAdapter } from "@socket.io/redis-adapter";
 import { verifyToken  } from '@clerk/backend';
 import 'dotenv/config'
 process.loadEnvFile("./.env.local")
 
 const PORT = Number(process.env.PORT) || 8080;
 
-const io = new Server(PORT, {
+const redisConfig = {
+  socket: {
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT),
+  },
+  password: process.env.REDIS_PASSWORD
+};
+
+const pubClient = createClient(redisConfig);
+
+const subClient = pubClient.duplicate();
+
+async function clientConnect(){
+  await Promise.all([
+    pubClient.connect(),
+    subClient.connect()
+  ]);
+}
+
+clientConnect()
+
+  console.log('Redis clients connected successfully');
+
+const io = new Server({
+  adapter : createShardedAdapter(pubClient,subClient),
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
@@ -13,15 +39,13 @@ const io = new Server(PORT, {
 });
 
 io.use(async (socket, next) => {
+  try {    
   const auth = socket.handshake.auth.token;
   const token = auth.token
 
   if (!auth || !token) {
-    io.close()
     return next(new Error("Authentication error: No token provided"));
   }
-
-  try {    
 
     const verified = await verifyToken(token, {
       jwtKey: process.env.CLERK_JWT_KEY
@@ -44,19 +68,37 @@ io.use(async (socket, next) => {
 console.log(`WebSocket server running on port ${PORT}`);
 
 io.on("connection", (socket) => {
-  
-  console.log(`Client connected: ${socket.id}`);
 
-  socket.on("join-room", (data) => {
-    if (!data || !data.roomId) {
-      socket.emit("error", "Room ID is required");
-      return;
-    }
+    const user = socket.data.user;
+    console.log(`Client connected: ${socket.id}`);
 
-    socket.join(data.roomId);
-    console.log(`Socket ${socket.id} joined room ${data.roomId}`);
-    socket.emit("room-joined", "Room joined successfully.");
-    io.to(data.roomId).emit(`${data.username} has joined the room.`)
+    socket.on("join-room", async (data) => {
+      if (!data || !data.roomId) {
+        socket.emit("error", "Room ID is required");
+        return;
+      }
+    try {
+      const roomId = data.roomId.toString();
+      await socket.join(roomId);
+      console.log(`Socket ${socket.id} joined room ${roomId}`);
+
+        socket.emit("room-joined", {
+          success: true,
+          message: "Room joined successfully",
+          roomId: roomId
+        });
+
+        socket.to(roomId).emit("user-event", {
+          type: "user-joined",
+          message: `${data.username || 'A user'} has joined the room`,
+          userId: user.userId,
+          username: data.username,
+          timestamp: new Date().toISOString()
+        });
+      }catch(e){
+        console.error("Join room error:", e);
+        socket.emit("error", { message: "Failed to join room" });
+      }
   });
 
   socket.on("chat", (data) => {
@@ -64,28 +106,111 @@ io.on("connection", (socket) => {
       socket.emit("error", "RoomId and message required.");
       return;
     }
-    console.log(`Message from ${socket.id}:`, data);
     // FIX: NEED TO STORE CHATS IN A DATABSE HERE, BETTER APPORACH IS TO USE ASYNCHRONOURS ARCHITECTURE HERE (QUEUE, a Aknowledged queue, ETL pipeline)
-    socket.to(data.roomId).emit("chat",data.message)
+    try{
+      const roomId = data.roomId.toString();
+      const messageData = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        message: data.message,
+        userId: user.userId,
+        username: data.username || 'Anonymous',
+        timestamp: new Date().toISOString(),
+        roomId: roomId
+      };
+      
+      console.log(`Message from ${socket.id} in room ${roomId}:`, messageData);
+      
+      io.to(roomId).emit("chat", messageData);
+
+      socket.emit("message-sent", {
+        success: true,
+        messageId: messageData.id,
+        timestamp: messageData.timestamp
+      });
+    }catch(e){
+      console.error("Chat error:", e);
+      socket.emit("error", { message: "Failed to send message" });
+    }
   });
 
-  socket.on("leave-room",(data)=>{
+  socket.on("leave-room",async(data)=>{
     if (!data || !data.roomId || !data.message) {
       socket.emit("error", "RoomId required.");
       return;
     }
+    try{
+      const roomId = data.roomId.toString();
 
-    socket.leave(data.roomId)
+      await socket.leave(data.roomId)
 
-    io.to(data.roomId).emit(`${data.username} has left the room.`)
+      socket.to(roomId).emit("user-event", {
+        type: "user-left", 
+        message: `${data.username || 'A user'} has left the room`,
+        userId: user.userId,
+        username: data.username,
+        timestamp: new Date().toISOString()
+      });
+
+      socket.emit("room-left", {
+        success: true,
+        message: "Left room successfully",
+        roomId: roomId
+      });
+
+    }catch(e){
+      console.error("Leave room error:", e);
+      socket.emit("error", { message: "Error occured." });
+    }
+
 
   })
 
-  socket.on("disconnect", () => {
-    console.log(`Client disconnected: ${socket.id}`);
+  socket.on("disconnect", (reason) => {
+    console.log(`Client disconnected: ${socket.id} (${reason})`);
   });
 
   socket.on("error", (error) => {
     console.error(`Socket error for ${socket.id}:`, error);
   });
+});
+
+io.listen(PORT);
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+async function gracefulShutdown() {
+  console.log('Shutting down WebSocket server...');
+  
+  try {
+    io.close(() => {
+      console.log('Socket.IO server closed');
+    });
+    
+    await pubClient.quit();
+    await subClient.quit();
+    
+    console.log('WebSocket server shutdown complete');
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+pubClient.on('connect', () => {
+  console.log('Redis pub client connected');
+});
+
+subClient.on('connect', () => {
+  console.log('Redis sub client connected');
+});
+
+pubClient.on('error', (err) => {
+  console.error('Redis pub client error:', err);
+});
+
+subClient.on('error', (err) => {
+  console.error('Redis sub client error:', err);
 });
